@@ -1,0 +1,104 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, expr, concat, lit
+
+def read_data(file_path):
+    spark = SparkSession.builder \
+        .appName("Sales Data Processing") \
+        .getOrCreate()
+    
+    return spark.read.csv(file_path, header=True, inferSchema=True)
+
+# Load data from both regions
+df_A = read_data('order_origin_a.csv')
+df_B = read_data('order_origin_b.csv')
+
+--2. Transform Data
+--Next, you will transform the data according to the business rules.Implement PySpark transformations based on the business rules mentioned above.
+
+# Add a region column and calculate total_sales
+df_A = df_A.withColumn("region", lit("A"))
+df_B = df_B.withColumn("region", lit("B"))
+
+# Combine the data from both regions into a single table
+combined_df = df_A.union(df_B)
+
+# Calculate total_sales as QuantityOrdered * ItemPrice
+combined_df = combined_df.withColumn("total_sales", col("QuantityOrdered") * col("ItemPrice"))
+
+# Add a new column net_sale, calculated as total_sales - PromotionDiscount
+# Convert the PromotionDiscount (JSON string) to a numerical value
+combined_df = combined_df.withColumn("PromotionDiscount", expr("cast(regexp_extract(PromotionDiscount, '[0-9]+\\.?[0-9]*', 0) as double)"))
+combined_df = combined_df.withColumn("net_sale", col("total_sales") - col("PromotionDiscount"))
+
+# Remove duplicate entries based on OrderId
+combined_df = combined_df.dropDuplicates(["OrderId"])
+
+# Exclude orders where the total sales amount is negative or zero after applying discounts
+combined_df = combined_df.filter(col("net_sale") > 0)
+
+3. Load Data
+You will now load the transformed data into a database.
+
+a. Create a table sales_data.
+This step depends on the database you are using. Here's a general example assuming you're using a JDBC connection to a relational database:
+
+def load_data_to_db(df, table_name, db_url, db_properties):
+    df.write.jdbc(url=db_url, table=table_name, mode="overwrite", properties=db_properties)
+
+# Example database connection properties
+db_url = "jdbc:sqllite://database-url:5432/order_database"
+db_properties = {
+    "user": "kuldeep1769",
+    "password": "ABCD_*22",
+    "driver": "org.sqllite.Driver"
+}
+
+# Load the data into the database
+load_data_to_db(combined_df, "sales_data", db_url, db_properties)
+
+
+4. Write SQL Queries and PySpark Functions to Validate Data
+a. Count the total number of records.
+%pyspark
+record_count = combined_df.count()
+print(f"Total number of records: {record_count}")
+
+%sql
+SELECT COUNT(*) AS total_records
+FROM sales_data;
+
+b. Find the total sales amount by region.
+%pyspark
+total_sales_by_region = combined_df.groupBy("region").sum("total_sales")
+total_sales_by_region.show()
+
+%sql
+SELECT region, SUM(total_sales) AS total_sales_amount
+FROM sales_data
+GROUP BY region;
+
+
+c. Find the average sales amount per transaction.
+%pyspark
+avg_sales_per_transaction = combined_df.agg({"total_sales": "avg"})
+avg_sales_per_transaction.show()
+
+%sql
+SELECT AVG(total_sales) AS average_sales_per_transaction
+FROM sales_data;
+
+d. Ensure there are no duplicate OrderId values.
+%pyspark
+duplicate_order_ids = combined_df.groupBy("OrderId").count().filter("count > 1")
+duplicate_order_ids_count = duplicate_order_ids.count()
+
+if duplicate_order_ids_count == 0:
+    print("No duplicate OrderId values found.")
+else:
+    print(f"Found {duplicate_order_ids_count} duplicate OrderId values.")
+
+%sql
+SELECT OrderId, COUNT(*) AS order_count
+FROM sales_data
+GROUP BY OrderId
+HAVING COUNT(*) > 1;
