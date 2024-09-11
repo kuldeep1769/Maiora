@@ -1,19 +1,20 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, expr, concat, lit
 
+#1. Extract the data 
 def read_data(file_path):
     spark = SparkSession.builder \
         .appName("Sales Data Processing") \
         .getOrCreate()
     
-    return spark.read.csv(file_path, header=True, inferSchema=True)
+    return spark.read.csv(url_given_as_path, header=True, inferSchema=True)
 
 # Load data from both regions
 df_A = read_data('order_origin_a.csv')
 df_B = read_data('order_origin_b.csv')
 
---2. Transform Data
---Next, you will transform the data according to the business rules.Implement PySpark transformations based on the business rules mentioned above.
+#2. Transform Data
+#Next, you will transform the data according to the business rules.Implement PySpark transformations based on the business rules mentioned above.
 
 # Add a region column and calculate total_sales
 df_A = df_A.withColumn("region", lit("A"))
@@ -36,11 +37,11 @@ combined_df = combined_df.dropDuplicates(["OrderId"])
 # Exclude orders where the total sales amount is negative or zero after applying discounts
 combined_df = combined_df.filter(col("net_sale") > 0)
 
-3. Load Data
-You will now load the transformed data into a database.
+# 3. Load Data
+# You will now load the transformed data into a database.
 
-a. Create a table sales_data.
-This step depends on the database you are using. Here's a general example assuming you're using a JDBC connection to a relational database:
+# a. Create a table sales_data.
+#This step depends on the database we are using. Here's a general example assuming you're using a JDBC connection to a relational database:
 
 def load_data_to_db(df, table_name, db_url, db_properties):
     df.write.jdbc(url=db_url, table=table_name, mode="overwrite", properties=db_properties)
@@ -57,8 +58,8 @@ db_properties = {
 load_data_to_db(combined_df, "sales_data", db_url, db_properties)
 
 
-4. Write SQL Queries and PySpark Functions to Validate Data
-a. Count the total number of records.
+# 4. Write SQL Queries and PySpark Functions to Validate Data
+#  a. Count the total number of records.
 %pyspark
 record_count = combined_df.count()
 print(f"Total number of records: {record_count}")
@@ -67,7 +68,7 @@ print(f"Total number of records: {record_count}")
 SELECT COUNT(*) AS total_records
 FROM sales_data;
 
-b. Find the total sales amount by region.
+#b. Find the total sales amount by region.
 %pyspark
 total_sales_by_region = combined_df.groupBy("region").sum("total_sales")
 total_sales_by_region.show()
@@ -78,7 +79,7 @@ FROM sales_data
 GROUP BY region;
 
 
-c. Find the average sales amount per transaction.
+#c. Find the average sales amount per transaction.
 %pyspark
 avg_sales_per_transaction = combined_df.agg({"total_sales": "avg"})
 avg_sales_per_transaction.show()
@@ -87,7 +88,7 @@ avg_sales_per_transaction.show()
 SELECT AVG(total_sales) AS average_sales_per_transaction
 FROM sales_data;
 
-d. Ensure there are no duplicate OrderId values.
+#d. Ensure there are no duplicate OrderId values.
 %pyspark
 duplicate_order_ids = combined_df.groupBy("OrderId").count().filter("count > 1")
 duplicate_order_ids_count = duplicate_order_ids.count()
