@@ -1,0 +1,125 @@
+#3. Create the Database Models
+#In models.py, define the SQLAlchemy model to represent the joke data.
+
+from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Joke(Base):
+    __tablename__ = "jokes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String)
+    type = Column(String)
+    joke = Column(String, nullable=True)
+    setup = Column(String, nullable=True)
+    delivery = Column(String, nullable=True)
+    nsfw = Column(Boolean)
+    political = Column(Boolean)
+    sexist = Column(Boolean)
+    safe = Column(Boolean)
+    lang = Column(String)
+
+#Create the Database Connection
+#In database.py, set up the connection to the SQLite database.
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+SQLALCHEMY_DATABASE_URL = "sqlite:///./jokes.db"
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db():
+    from .models import Base
+    Base.metadata.create_all(bind=engine)
+
+#5. Create Pydantic Schemas
+#In schemas.py, define the Pydantic models for data validation.
+
+from pydantic import BaseModel
+from typing import Optional
+
+class JokeBase(BaseModel):
+    category: str
+    type: str
+    joke: Optional[str] = None
+    setup: Optional[str] = None
+    delivery: Optional[str] = None
+    nsfw: bool
+    political: bool
+    sexist: bool
+    safe: bool
+    lang: str
+
+#6. Fetch and Store Jokes
+#In main.py, write the FastAPI application that fetches jokes from the external API and stores them in the database.
+
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
+import requests
+from .database import SessionLocal, init_db
+from .models import Joke
+from .schemas import JokeBase
+
+app = FastAPI()
+
+# Initialize the database
+init_db()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.post("/fetch-jokes/")
+def fetch_jokes(db: Session = Depends(get_db)):
+    url = "https://v2.jokeapi.dev/joke/Any?amount=100"
+    response = requests.get(url)
+    jokes = response.json()["jokes"]
+
+    for joke_data in jokes:
+        if joke_data["type"] == "single":
+            joke = Joke(
+                category=joke_data["category"],
+                type=joke_data["type"],
+                joke=joke_data.get("joke"),
+                nsfw=joke_data["flags"]["nsfw"],
+                political=joke_data["flags"]["political"],
+                sexist=joke_data["flags"]["sexist"],
+                safe=joke_data["safe"],
+                lang=joke_data["lang"]
+            )
+        else:
+            joke = Joke(
+                category=joke_data["category"],
+                type=joke_data["type"],
+                setup=joke_data.get("setup"),
+                delivery=joke_data.get("delivery"),
+                nsfw=joke_data["flags"]["nsfw"],
+                political=joke_data["flags"]["political"],
+                sexist=joke_data["flags"]["sexist"],
+                safe=joke_data["safe"],
+                lang=joke_data["lang"]
+            )
+
+        db.add(joke)
+    db.commit()
+    return {"message": "Jokes fetched and stored successfully"}
+
+#7. Running the Application
+#Run the FastAPI server with Uvicorn:
+
+uvicorn main:app --reload
+#This command starts the FastAPI server, and you can access it at http://127.0.0.1:8000.
+
+#8. Testing the Endpoint
+To test the endpoint, you can use curl, Postman, or simply open your browser and navigate to:
+
+#arduino
+http://127.0.0.1:8000/fetch-jokes/
+#This will trigger the endpoint that fetches 100 jokes from JokeAPI and stores them in the SQLite database.
